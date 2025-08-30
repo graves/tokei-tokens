@@ -152,7 +152,7 @@ and your configuration directory.
 
 #### Basic usage
 
-This is the basic way to use tokei. Which will report on the code in `./foo`
+This is the basic way to use tokei-tokens. Which will report on the code in `./foo`
 and all subfolders.
 
 ```shell

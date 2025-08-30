@@ -19,7 +19,7 @@ impl LanguageType {
     /// Returns the display name of a language.
     ///
     /// ```
-    /// # use tokei::*;
+    /// # use tokei-tokens::*;
     /// let bash = LanguageType::Bash;
     ///
     /// assert_eq!(bash.name(), "BASH");
@@ -68,7 +68,7 @@ impl LanguageType {
 
     /// Returns the single line comments of a language.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::Rust;
     /// assert_eq!(lang.line_comments(), &["//"]);
     /// ```
@@ -82,7 +82,7 @@ impl LanguageType {
 
     /// Returns the single line comments of a language.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::Rust;
     /// assert_eq!(lang.multi_line_comments(), &[("/*", "*/")]);
     /// ```
@@ -102,7 +102,7 @@ impl LanguageType {
 
     /// Returns whether the language allows nested multi line comments.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::Rust;
     /// assert!(lang.allows_nested());
     /// ```
@@ -117,7 +117,7 @@ impl LanguageType {
     /// Returns what nested comments the language has. (Currently only D has
     /// any of this type.)
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::D;
     /// assert_eq!(lang.nested_comments(), &[("/+", "+/")]);
     /// ```
@@ -136,7 +136,7 @@ impl LanguageType {
 
     /// Returns the quotes of a language.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::C;
     /// assert_eq!(lang.quotes(), &[("\"", "\"")]);
     /// ```
@@ -154,7 +154,7 @@ impl LanguageType {
 
     /// Returns the verbatim quotes of a language.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::CSharp;
     /// assert_eq!(lang.verbatim_quotes(), &[("@\"", "\"")]);
     /// ```
@@ -172,7 +172,7 @@ impl LanguageType {
 
     /// Returns the doc quotes of a language.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::Python;
     /// assert_eq!(lang.doc_quotes(), &[("\"\"\"", "\"\"\""), ("'''", "'''")]);
     /// ```
@@ -190,7 +190,7 @@ impl LanguageType {
 
     /// Returns the shebang of a language.
     /// ```
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     /// let lang = LanguageType::Bash;
     /// assert_eq!(lang.shebangs(), &["#!/bin/bash"]);
     /// ```
@@ -267,7 +267,7 @@ impl LanguageType {
     /// Get language from a file path. May open and read the file.
     ///
     /// ```no_run
-    /// use tokei::{Config, LanguageType};
+    /// use tokei-tokens::{Config, LanguageType};
     ///
     /// let rust = LanguageType::from_path("./main.rs", &Config::default());
     ///
@@ -301,7 +301,7 @@ impl LanguageType {
     /// Get language from a file extension.
     ///
     /// ```no_run
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     ///
     /// let rust = LanguageType::from_file_extension("rs");
     ///
@@ -325,7 +325,7 @@ impl LanguageType {
     /// Get language from its name.
     ///
     /// ```no_run
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     ///
     /// let rust = LanguageType::from_name("Rust");
     ///
@@ -350,7 +350,7 @@ impl LanguageType {
     /// Get language from its MIME type if available.
     ///
     /// ```no_run
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     ///
     /// let lang = LanguageType::from_mime("application/javascript");
     ///
@@ -374,7 +374,7 @@ impl LanguageType {
     /// Get language from a shebang. May open and read the file.
     ///
     /// ```no_run
-    /// use tokei::LanguageType;
+    /// use tokei-tokens::LanguageType;
     ///
     /// let rust = LanguageType::from_shebang("./main.rs");
     ///

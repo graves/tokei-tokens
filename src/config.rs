@@ -10,7 +10,7 @@ use crate::stats::Report;
 /// counts languages.
 ///
 /// ```
-/// use tokei::Config;
+/// use tokei-tokens::Config;
 ///
 /// let config = Config {
 ///     treat_doc_strings_as_comments: Some(true),
@@ -144,7 +144,7 @@ impl Config {
 ///
 /// ```
 /// use std::collections::HashMap;
-/// use tokei::{Config, LanguageConfig, LanguageType};
+/// use tokei-tokens::{Config, LanguageConfig, LanguageType};
 ///
 /// let config = Config {
 ///     languages: {

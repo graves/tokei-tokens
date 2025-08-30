@@ -6,7 +6,7 @@ use std::fs;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
-use tokei::{Config, Languages};
+use tokei-tokens::{Config, Languages};
 
 static LINES: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+ lines").unwrap());
 static CODE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+ code").unwrap());
@@ -27,7 +27,7 @@ macro_rules! get_digit {
 }
 
 mod config {
-    use tokei::*;
+    use tokei-tokens::*;
 
     /*
     #[test]
