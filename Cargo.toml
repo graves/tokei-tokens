@@ -1,5 +1,5 @@
 [package]
-authors = ["Thomas Gentry, Erin Power <xampprocky@gmail.com>"]
+authors = ["Thomas Gentry"]
 build = "build.rs"
 categories = ["command-line-utilities", "development-tools", "visualization"]
 description = "Count your code, quickly."
