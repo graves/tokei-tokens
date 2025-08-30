@@ -1,5 +1,5 @@
 [package]
-authors = ["Erin Power <xampprocky@gmail.com>"]
+authors = ["Thomas Gentry, Erin Power <xampprocky@gmail.com>"]
 build = "build.rs"
 categories = ["command-line-utilities", "development-tools", "visualization"]
 description = "Count your code, quickly."
@@ -17,7 +17,7 @@ keywords = ["utility", "cli", "cloc", "lines", "statistics"]
 license = "MIT OR Apache-2.0"
 name = "tokei"
 readme = "README.md"
-repository = "https://github.com/XAMPPRocky/tokei.git"
+repository = "https://github.com/graves/tokei-tokens.git"
 version = "13.0.0"
 rust-version = "1.71"
 edition = "2021"
