@@ -1,7 +1,8 @@
-use crate::consts::{
-    BLANKS_COLUMN_WIDTH, CODE_COLUMN_WIDTH, COMMENTS_COLUMN_WIDTH, LINES_COLUMN_WIDTH,
-};
 use crate::LanguageType;
+use crate::consts::{
+    BLANKS_COLUMN_WIDTH, CODE_COLUMN_WIDTH, COMMENT_TOKENS_COLUMN_WIDTH, COMMENTS_COLUMN_WIDTH,
+    LINES_COLUMN_WIDTH, SOURCE_TOKENS_COLUMN_WIDTH, TOTAL_TOKENS_COLUMN_WIDTH,
+};
 use std::{collections::BTreeMap, fmt, ops, path::PathBuf};
 
 /// A struct representing stats about a single blob of code.
@@ -16,6 +17,14 @@ pub struct CodeStats {
     pub comments: usize,
     /// Language blobs that were contained inside this blob.
     pub blobs: BTreeMap<LanguageType, CodeStats>,
+
+    // Token counts
+    /// Number of source code tokens.
+    pub source_code_tokens: usize,
+    /// Number of comment tokens.
+    pub comment_tokens: usize,
+    /// Total tokens (= source_code_tokens + comment_tokens).
+    pub total_tokens: usize,
 }
 
 impl CodeStats {
@@ -31,6 +40,20 @@ impl CodeStats {
         self.blanks + self.code + self.comments
     }
 
+    /// Increment source code tokens and keep `total_tokens` in sync.
+    #[inline]
+    pub fn add_source_code_tokens(&mut self, n: usize) {
+        self.source_code_tokens += n;
+        self.total_tokens = self.source_code_tokens + self.comment_tokens;
+    }
+
+    /// Increment comment tokens and keep `total_tokens` in sync.
+    #[inline]
+    pub fn add_comment_tokens(&mut self, n: usize) {
+        self.comment_tokens += n;
+        self.total_tokens = self.source_code_tokens + self.comment_tokens;
+    }
+
     /// Creates a new `CodeStats` from an existing one with all of the child
     /// blobs merged.
     #[must_use]
@@ -43,8 +66,12 @@ impl CodeStats {
             summary.blanks += child_summary.blanks;
             summary.comments += child_summary.comments;
             summary.code += child_summary.code;
+
+            summary.source_code_tokens += child_summary.source_code_tokens;
+            summary.comment_tokens += child_summary.comment_tokens;
         }
 
+        summary.total_tokens = summary.source_code_tokens + summary.comment_tokens;
         summary
     }
 }
@@ -60,6 +87,11 @@ impl ops::AddAssign<&'_ CodeStats> for CodeStats {
         self.blanks += rhs.blanks;
         self.code += rhs.code;
         self.comments += rhs.comments;
+
+        self.source_code_tokens += rhs.source_code_tokens;
+        self.comment_tokens += rhs.comment_tokens;
+        // total is always derived from the two fields above
+        self.total_tokens = self.source_code_tokens + self.comment_tokens;
 
         for (language, stats) in &rhs.blobs {
             *self.blobs.entry(*language).or_default() += stats;
@@ -111,12 +143,22 @@ macro_rules! display_stats {
     ($f:expr, $this:expr, $name:expr, $max:expr) => {
         write!(
             $f,
-            " {: <max$} {:>LINES_COLUMN_WIDTH$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
+            " {: <max$} \
+              {:>LINES_COLUMN_WIDTH$} \
+              {:>CODE_COLUMN_WIDTH$} \
+              {:>COMMENTS_COLUMN_WIDTH$} \
+              {:>BLANKS_COLUMN_WIDTH$} \
+              {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+              {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+              {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
             $name,
             $this.stats.lines(),
             $this.stats.code,
             $this.stats.comments,
             $this.stats.blanks,
+            $this.stats.source_code_tokens,
+            $this.stats.comment_tokens,
+            $this.stats.total_tokens,
             max = $max
         )
     };

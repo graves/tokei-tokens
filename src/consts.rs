@@ -6,7 +6,7 @@ pub const FALLBACK_ROW_LEN: usize = 81;
 // Column widths used for console printing.
 
 /// Language column width
-pub const LANGUAGE_COLUMN_WIDTH: usize = 10;
+pub const LANGUAGE_COLUMN_WIDTH: usize = 8;
 
 /// Path column width
 pub const PATH_COLUMN_WIDTH: usize = 80;
@@ -15,7 +15,7 @@ pub const PATH_COLUMN_WIDTH: usize = 80;
 pub const FILES_COLUMN_WIDTH: usize = 8;
 
 /// Lines column width
-pub const LINES_COLUMN_WIDTH: usize = 12;
+pub const LINES_COLUMN_WIDTH: usize = 8;
 
 /// Code column width
 pub const CODE_COLUMN_WIDTH: usize = 12;
@@ -25,3 +25,10 @@ pub const COMMENTS_COLUMN_WIDTH: usize = 12;
 
 /// Blanks column width
 pub const BLANKS_COLUMN_WIDTH: usize = 12;
+
+/// Source tokens column width
+pub const SOURCE_TOKENS_COLUMN_WIDTH: usize = 12; // tweak as you like
+/// Comment tokens column width
+pub const COMMENT_TOKENS_COLUMN_WIDTH: usize = 12;
+/// Total tokens column width
+pub const TOTAL_TOKENS_COLUMN_WIDTH: usize = 12;

@@ -7,21 +7,47 @@ use std::{
 };
 
 use clap::crate_version;
-use colored::Colorize;
+// Avoid ANSI in width-constrained fields.
+// use colored::Colorize;
 use num_format::ToFormattedString;
 
 use crate::input::Format;
-use tokei::{find_char_boundary, CodeStats, Language, LanguageType, Report};
+use tokei::{CodeStats, Language, LanguageType, Report, find_char_boundary};
 
 use crate::consts::{
-    BLANKS_COLUMN_WIDTH, CODE_COLUMN_WIDTH, COMMENTS_COLUMN_WIDTH, FILES_COLUMN_WIDTH,
-    LINES_COLUMN_WIDTH,
+    BLANKS_COLUMN_WIDTH, CODE_COLUMN_WIDTH, COMMENT_TOKENS_COLUMN_WIDTH, COMMENTS_COLUMN_WIDTH,
+    FILES_COLUMN_WIDTH, LINES_COLUMN_WIDTH, SOURCE_TOKENS_COLUMN_WIDTH, TOTAL_TOKENS_COLUMN_WIDTH,
 };
 
-const NO_LANG_HEADER_ROW_LEN: usize = 69;
-const NO_LANG_ROW_LEN: usize = 63;
-const NO_LANG_ROW_LEN_NO_SPACES: usize = 56;
+#[inline]
+fn files_col_width() -> usize {
+    // Must match Files column width in header.
+    FILES_COLUMN_WIDTH + 6
+}
+
 const IDENT_INACCURATE: &str = "(!)";
+
+#[inline]
+fn tail_width_for_table() -> usize {
+    // Width to the RIGHT of the first column (Language/filepath),
+    // including the single separating space before the numeric block.
+    let files_w = files_col_width();
+    1 + files_w
+        + 1
+        + LINES_COLUMN_WIDTH
+        + 1
+        + CODE_COLUMN_WIDTH
+        + 1
+        + COMMENTS_COLUMN_WIDTH
+        + 1
+        + BLANKS_COLUMN_WIDTH
+        + 1
+        + SOURCE_TOKENS_COLUMN_WIDTH
+        + 1
+        + COMMENT_TOKENS_COLUMN_WIDTH
+        + 1
+        + TOTAL_TOKENS_COLUMN_WIDTH
+}
 
 pub fn crate_version() -> String {
     if Format::supported().is_empty() {
@@ -68,14 +94,10 @@ where
 #[non_exhaustive]
 #[derive(Debug, Copy, Clone)]
 pub enum NumberFormatStyle {
-    // 1234 (Default)
-    Plain,
-    // 1,234
-    Commas,
-    // 1.234
-    Dots,
-    // 1_234
-    Underscores,
+    Plain,       // 1234 (Default)
+    Commas,      // 1,234
+    Dots,        // 1.234
+    Underscores, // 1_234
 }
 
 impl Default for NumberFormatStyle {
@@ -121,7 +143,13 @@ impl NumberFormatStyle {
 
 pub struct Printer<W> {
     writer: W,
+    /// Terminal columns (hint from main).
     columns: usize,
+    /// Fixed width of the first (left) column: Language / filepath.
+    first_col_width: usize,
+    /// Exact width of the whole rendered table (left col + numeric tail).
+    table_width: usize,
+    /// For file rows path truncation (same as first_col_width).
     path_length: usize,
     row: String,
     subrow: String,
@@ -136,13 +164,28 @@ impl<W> Printer<W> {
         writer: W,
         number_format: num_format::CustomFormat,
     ) -> Self {
+        let numeric_tail = tail_width_for_table();
+
+        // Ensure the Language column never collapses below a reasonable width.
+        // 12 works well for common language names and keeps the numeric block aligned.
+        const MIN_FIRST_COL: usize = 12;
+
+        // If the terminal is narrow, we *still* keep MIN_FIRST_COL for alignment, even
+        // if that means the table will be wider than `columns` (and may soft-wrap in the terminal).
+        let first_col_width = std::cmp::max(columns.saturating_sub(numeric_tail), MIN_FIRST_COL);
+
+        // Build the exact table width from our specs, not the terminal columns.
+        let table_width = first_col_width + numeric_tail;
+
         Self {
             columns,
             list_files,
-            path_length: columns - NO_LANG_ROW_LEN_NO_SPACES,
+            first_col_width,
+            table_width,
+            path_length: first_col_width, // used for file/path truncation
             writer,
-            row: "━".repeat(columns),
-            subrow: "─".repeat(columns),
+            row: "━".repeat(table_width),
+            subrow: "─".repeat(table_width),
             number_format,
         }
     }
@@ -152,17 +195,29 @@ impl<W: Write> Printer<W> {
     pub fn print_header(&mut self) -> io::Result<()> {
         self.print_row()?;
 
-        let files_column_width: usize = FILES_COLUMN_WIDTH + 6;
+        let files_column_width: usize = files_col_width();
+
         writeln!(
             self.writer,
-            " {:<6$} {:>files_column_width$} {:>LINES_COLUMN_WIDTH$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
-            "Language".bold().blue(),
-            "Files".bold().blue(),
-            "Lines".bold().blue(),
-            "Code".bold().blue(),
-            "Comments".bold().blue(),
-            "Blanks".bold().blue(),
-            self.columns - NO_LANG_HEADER_ROW_LEN
+            "{:<lang_w$} \
+             {:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
+            "Language",
+            "Files",
+            "Lines",
+            "Code",
+            "Comments",
+            "Blanks",
+            "SrcTok",
+            "ComTok",
+            "TotTok",
+            lang_w = self.first_col_width,
         )?;
         self.print_row()
     }
@@ -179,11 +234,32 @@ impl<W: Write> Printer<W> {
     where
         W: Write,
     {
-        self.print_language_name(language.inaccurate, name, None)?;
-        write!(self.writer, " ")?;
+        let files_column_width = files_col_width();
+
+        let label = self.render_first_col_label(name, language.inaccurate);
+
+        // Token totals: sum file summaries
+        let (src_tok, com_tok) = language
+            .reports
+            .iter()
+            .map(|r| r.stats.summarise())
+            .fold((0usize, 0usize), |(a_src, a_com), s| {
+                (a_src + s.source_code_tokens, a_com + s.comment_tokens)
+            });
+        let tot_tok = src_tok + com_tok;
+
         writeln!(
             self.writer,
-            "{:>FILES_COLUMN_WIDTH$} {:>LINES_COLUMN_WIDTH$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
+            "{:<lang_w$} \
+             {:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
+            label,
             language
                 .reports
                 .len()
@@ -192,6 +268,10 @@ impl<W: Write> Printer<W> {
             language.code.to_formatted_string(&self.number_format),
             language.comments.to_formatted_string(&self.number_format),
             language.blanks.to_formatted_string(&self.number_format),
+            src_tok.to_formatted_string(&self.number_format),
+            com_tok.to_formatted_string(&self.number_format),
+            tot_tok.to_formatted_string(&self.number_format),
+            lang_w = self.first_col_width,
         )
     }
 
@@ -199,66 +279,84 @@ impl<W: Write> Printer<W> {
     where
         W: Write,
     {
-        self.print_language_name(language.inaccurate, "Total", None)?;
-        write!(self.writer, " ")?;
-        writeln!(
-            self.writer,
-            "{:>FILES_COLUMN_WIDTH$} {:>LINES_COLUMN_WIDTH$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
+        let files_column_width = files_col_width();
+
+        let label = self.render_first_col_label("Total", language.inaccurate);
+
+        // Aggregate across children
+        let (files_total, lines_total, src_tok, com_tok) =
             language
                 .children
                 .values()
-                .map(Vec::len)
-                .sum::<usize>()
-                .to_formatted_string(&self.number_format)
-                .blue(),
-            language
-                .lines()
-                .to_formatted_string(&self.number_format)
-                .blue(),
-            language
-                .code
-                .to_formatted_string(&self.number_format)
-                .blue(),
-            language
-                .comments
-                .to_formatted_string(&self.number_format)
-                .blue(),
-            language
-                .blanks
-                .to_formatted_string(&self.number_format)
-                .blue(),
+                .fold((0usize, 0usize, 0usize, 0usize), |acc, reps| {
+                    let (mut f, mut lines, mut src, mut com) = acc;
+                    f += reps.len();
+                    for r in reps {
+                        let s = r.stats.summarise();
+                        lines += s.lines();
+                        src += s.source_code_tokens;
+                        com += s.comment_tokens;
+                    }
+                    (f, lines, src, com)
+                });
+        let tot_tok = src_tok + com_tok;
+
+        writeln!(
+            self.writer,
+            "{:<lang_w$} \
+             {:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
+            label,
+            files_total.to_formatted_string(&self.number_format),
+            lines_total.to_formatted_string(&self.number_format),
+            language.code.to_formatted_string(&self.number_format),
+            language.comments.to_formatted_string(&self.number_format),
+            language.blanks.to_formatted_string(&self.number_format),
+            src_tok.to_formatted_string(&self.number_format),
+            com_tok.to_formatted_string(&self.number_format),
+            tot_tok.to_formatted_string(&self.number_format),
+            lang_w = self.first_col_width,
         )
+    }
+
+    /// Render a label into the first column width, with optional inaccuracy marker
+    /// and safe truncation that leaves a leading '|' if truncated from the left.
+    fn render_first_col_label(&self, name: &str, inaccurate: bool) -> String {
+        let mut label = name.to_string();
+        if inaccurate && self.first_col_width >= IDENT_INACCURATE.len() + 1 {
+            label.push_str(IDENT_INACCURATE);
+        }
+        self.truncate_name_for_width(&label, self.first_col_width)
     }
 
     pub fn print_language_name(
         &mut self,
-        inaccurate: bool,
+        _inaccurate: bool,
         name: &str,
         prefix: Option<&str>,
     ) -> io::Result<()> {
-        let mut lang_section_len = self.columns - NO_LANG_ROW_LEN - prefix.map_or(0, str::len);
-        if inaccurate {
-            lang_section_len -= IDENT_INACCURATE.len();
-        }
+        // Used for embedded language rows (" |-")
+        let prefix_len = prefix.map_or(0, str::len);
+        let mut width = self.first_col_width.saturating_sub(prefix_len);
 
         if let Some(prefix) = prefix {
             write!(self.writer, "{}", prefix)?;
         }
-        // truncate and replace the last char with a `|` if the name is too long
-        if lang_section_len < name.len() {
-            write!(self.writer, " {:.len$}", name, len = lang_section_len - 1)?;
+
+        if width == 0 {
+            write!(self.writer, "|")?;
+        } else if width == 1 {
             write!(self.writer, "|")?;
         } else {
-            write!(
-                self.writer,
-                " {:<len$}",
-                name.bold().magenta(),
-                len = lang_section_len
-            )?;
+            let rendered = self.truncate_name_for_width(name, width);
+            write!(self.writer, "{:<w$}", rendered, w = width)?;
         }
-        if inaccurate {
-            write!(self.writer, "{}", IDENT_INACCURATE)?;
-        };
 
         Ok(())
     }
@@ -268,30 +366,49 @@ impl<W: Write> Printer<W> {
         language_type: LanguageType,
         stats: &[CodeStats],
     ) -> io::Result<()> {
+        // First column for embedded language name: "|-<name>"
         self.print_language_name(false, &language_type.to_string(), Some(" |-"))?;
-        let mut code = 0;
-        let mut comments = 0;
-        let mut blanks = 0;
+        write!(self.writer, " ")?; // single space before numerics
 
-        for stats in stats.iter().map(tokei::CodeStats::summarise) {
-            code += stats.code;
-            comments += stats.comments;
-            blanks += stats.blanks;
+        // Aggregate per embedded language
+        let mut code = 0usize;
+        let mut comments = 0usize;
+        let mut blanks = 0usize;
+        let mut src_tok = 0usize;
+        let mut com_tok = 0usize;
+
+        for s in stats.iter().map(tokei::CodeStats::summarise) {
+            code += s.code;
+            comments += s.comments;
+            blanks += s.blanks;
+            src_tok += s.source_code_tokens;
+            com_tok += s.comment_tokens;
         }
+        let tot_tok = src_tok + com_tok;
 
+        let files_column_width = files_col_width();
         if stats.is_empty() {
-            Ok(())
-        } else {
-            writeln!(
-                self.writer,
-                " {:>FILES_COLUMN_WIDTH$} {:>LINES_COLUMN_WIDTH$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
-                stats.len().to_formatted_string(&self.number_format),
-                (code + comments + blanks).to_formatted_string(&self.number_format),
-                code.to_formatted_string(&self.number_format),
-                comments.to_formatted_string(&self.number_format),
-                blanks.to_formatted_string(&self.number_format),
-            )
+            return Ok(());
         }
+        writeln!(
+            self.writer,
+            "{:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
+            stats.len().to_formatted_string(&self.number_format),
+            (code + comments + blanks).to_formatted_string(&self.number_format),
+            code.to_formatted_string(&self.number_format),
+            comments.to_formatted_string(&self.number_format),
+            blanks.to_formatted_string(&self.number_format),
+            src_tok.to_formatted_string(&self.number_format),
+            com_tok.to_formatted_string(&self.number_format),
+            tot_tok.to_formatted_string(&self.number_format),
+        )
     }
 
     fn print_language_total(&mut self, parent: &Language) -> io::Result<()> {
@@ -309,8 +426,8 @@ impl<W: Write> Printer<W> {
         subtotal.stats.code += summary.code;
         subtotal.stats.comments += summary.comments;
         subtotal.stats.blanks += summary.blanks;
-        self.print_report_with_name(&subtotal)?;
 
+        self.print_report_with_name(&subtotal)?;
         Ok(())
     }
 
@@ -350,7 +467,7 @@ impl<W: Write> Printer<W> {
                     }
                     if compact {
                         for &report in &reports {
-                            writeln!(self.writer, "{:1$}", report, self.path_length)?;
+                            self.print_file_row(report)?;
                         }
                     } else {
                         let (a, b): (Vec<&Report>, Vec<&Report>) =
@@ -359,31 +476,23 @@ impl<W: Write> Printer<W> {
                             let mut first = true;
                             for report in reports.iter() {
                                 if report.stats.blobs.is_empty() {
-                                    writeln!(self.writer, "{:1$}", report, self.path_length)?;
+                                    self.print_file_row(report)?;
                                 } else {
                                     if first && a.is_empty() {
                                         writeln!(self.writer, " {}", report.name.display())?;
                                         first = false;
                                     } else {
+                                        let name_str = report.name.display().to_string();
+                                        let dash_count =
+                                            self.table_width.saturating_sub(4 + name_str.len());
                                         writeln!(
                                             self.writer,
                                             "-- {} {}",
-                                            report.name.display(),
-                                            "-".repeat(
-                                                self.columns
-                                                    - 4
-                                                    - report.name.display().to_string().len()
-                                            )
+                                            name_str,
+                                            "-".repeat(dash_count)
                                         )?;
                                     }
-                                    let mut new_report = (*report).clone();
-                                    new_report.name = name.to_string().into();
-                                    writeln!(
-                                        self.writer,
-                                        " |-{:1$}",
-                                        new_report,
-                                        self.path_length - 3
-                                    )?;
+                                    self.print_file_row(report)?;
                                     self.print_report_total(report, language.inaccurate)?;
                                 }
                             }
@@ -397,11 +506,66 @@ impl<W: Write> Printer<W> {
     }
 
     fn print_row(&mut self) -> io::Result<()> {
+        // Use table_width so separators always match the actual table.
+        if self.row.len() != self.table_width {
+            self.row = "━".repeat(self.table_width);
+        }
         writeln!(self.writer, "{}", self.row)
     }
 
     fn print_subrow(&mut self) -> io::Result<()> {
-        writeln!(self.writer, "{}", self.subrow.dimmed())
+        if self.subrow.len() != self.table_width {
+            self.subrow = "─".repeat(self.table_width);
+        }
+        writeln!(self.writer, "{}", self.subrow)
+    }
+
+    fn truncate_name_for_width(&self, s: &str, width: usize) -> String {
+        if width == 0 || s.len() <= width {
+            return s.to_string();
+        }
+        // Left-truncate with a leading '|' so the right side remains visible.
+        let from = find_char_boundary(s, s.len() + 1 - width);
+        format!("|{}", &s[from..])
+    }
+
+    fn print_file_row(&mut self, report: &Report) -> io::Result<()> {
+        let files_column_width = files_col_width();
+
+        // Fixed width for the name/path column (matches header/first_col_width).
+        let raw_name = report.name.to_string_lossy();
+        let name = self.truncate_name_for_width(&raw_name, self.first_col_width);
+
+        let name_width = self.first_col_width;
+
+        let stats = &report.stats;
+        let tot_tok = stats.source_code_tokens + stats.comment_tokens;
+
+        writeln!(
+            self.writer,
+            "{: <name_width$} \
+             {:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
+            name,
+            "1", // each file row corresponds to one file
+            stats.lines().to_formatted_string(&self.number_format),
+            stats.code.to_formatted_string(&self.number_format),
+            stats.comments.to_formatted_string(&self.number_format),
+            stats.blanks.to_formatted_string(&self.number_format),
+            stats
+                .source_code_tokens
+                .to_formatted_string(&self.number_format),
+            stats
+                .comment_tokens
+                .to_formatted_string(&self.number_format),
+            tot_tok.to_formatted_string(&self.number_format),
+        )
     }
 
     fn print_report(
@@ -411,15 +575,33 @@ impl<W: Write> Printer<W> {
         inaccurate: bool,
     ) -> io::Result<()> {
         self.print_language_name(inaccurate, &language_type.to_string(), Some(" |-"))?;
+        write!(self.writer, " ")?; // single space before numerics
+
+        let tot_tok = stats.source_code_tokens + stats.comment_tokens;
+        let files_column_width = files_col_width();
 
         writeln!(
             self.writer,
-            " {:>FILES_COLUMN_WIDTH$} {:>LINES_COLUMN_WIDTH$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
-            " ",
+            "{:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
+            "",
             stats.lines().to_formatted_string(&self.number_format),
             stats.code.to_formatted_string(&self.number_format),
             stats.comments.to_formatted_string(&self.number_format),
             stats.blanks.to_formatted_string(&self.number_format),
+            stats
+                .source_code_tokens
+                .to_formatted_string(&self.number_format),
+            stats
+                .comment_tokens
+                .to_formatted_string(&self.number_format),
+            tot_tok.to_formatted_string(&self.number_format),
         )
     }
 
@@ -439,23 +621,13 @@ impl<W: Write> Printer<W> {
         }
 
         self.print_report_with_name(report)?;
-
         Ok(())
     }
 
     fn print_report_with_name(&mut self, report: &Report) -> io::Result<()> {
-        let name = report.name.to_string_lossy();
-        let name_length = name.len();
-
-        if name_length > self.path_length {
-            let mut formatted = String::from("|");
-            // Add 1 to the index to account for the '|' we add to the output string
-            let from = find_char_boundary(&name, name_length + 1 - self.path_length);
-            formatted.push_str(&name[from..]);
-        }
-        self.print_report_total_formatted(name, self.path_length, report)?;
-
-        Ok(())
+        let raw = report.name.to_string_lossy();
+        let name = self.truncate_name_for_width(&raw, self.first_col_width);
+        self.print_report_total_formatted(Cow::Owned(name), self.first_col_width, report)
     }
 
     fn print_report_total_formatted(
@@ -464,11 +636,22 @@ impl<W: Write> Printer<W> {
         max_len: usize,
         report: &Report,
     ) -> io::Result<()> {
-        let lines_column_width: usize = FILES_COLUMN_WIDTH + 6;
+        let files_column_width: usize = files_col_width();
+        let tot_tok = report.stats.source_code_tokens + report.stats.comment_tokens;
+
         writeln!(
             self.writer,
-            " {: <max$} {:>lines_column_width$} {:>CODE_COLUMN_WIDTH$} {:>COMMENTS_COLUMN_WIDTH$} {:>BLANKS_COLUMN_WIDTH$}",
+            "{: <max$} \
+             {:>files_column_width$} \
+             {:>LINES_COLUMN_WIDTH$} \
+             {:>CODE_COLUMN_WIDTH$} \
+             {:>COMMENTS_COLUMN_WIDTH$} \
+             {:>BLANKS_COLUMN_WIDTH$} \
+             {:>SOURCE_TOKENS_COLUMN_WIDTH$} \
+             {:>COMMENT_TOKENS_COLUMN_WIDTH$} \
+             {:>TOTAL_TOKENS_COLUMN_WIDTH$}",
             name,
+            "", // no file-count here
             report
                 .stats
                 .lines()
@@ -479,6 +662,15 @@ impl<W: Write> Printer<W> {
                 .comments
                 .to_formatted_string(&self.number_format),
             report.stats.blanks.to_formatted_string(&self.number_format),
+            report
+                .stats
+                .source_code_tokens
+                .to_formatted_string(&self.number_format),
+            report
+                .stats
+                .comment_tokens
+                .to_formatted_string(&self.number_format),
+            tot_tok.to_formatted_string(&self.number_format),
             max = max_len
         )
     }

@@ -7,11 +7,25 @@ use log::Level::Trace;
 use once_cell::sync::Lazy;
 
 use super::embedding::{
-    RegexCache, RegexFamily, ENDING_LF_BLOCK_REGEX, ENDING_MARKDOWN_REGEX, END_SCRIPT, END_STYLE,
-    END_TEMPLATE,
+    END_SCRIPT, END_STYLE, END_TEMPLATE, ENDING_LF_BLOCK_REGEX, ENDING_MARKDOWN_REGEX, RegexCache,
+    RegexFamily,
 };
 use crate::LanguageType::LinguaFranca;
-use crate::{stats::CodeStats, utils::ext::SliceExt, Config, LanguageType};
+use crate::{Config, LanguageType, stats::CodeStats, utils::ext::SliceExt};
+
+use tiktoken_rs::{CoreBPE, cl100k_base};
+
+// Cache the BPE once per process.
+static TOKENIZER: Lazy<CoreBPE> =
+    Lazy::new(|| cl100k_base().expect("failed to initialize cl100k_base tokenizer"));
+
+#[inline]
+fn count_tokens_bytes(bytes: &[u8]) -> usize {
+    // lines are &[u8]; convert safely
+    let s = String::from_utf8_lossy(bytes);
+    // `encode_ordinary` ignores special tokens (typical for text/code counting)
+    TOKENIZER.encode_ordinary(&s).len()
+}
 
 /// Tracks the syntax of the language as well as the current state in the file.
 /// Current has what could be consider three types of mode.
@@ -206,9 +220,13 @@ impl SyntaxCounter {
                     .any(|c| line.starts_with(c.as_bytes()))
             {
                 stats.comments += 1;
+                // NEW:
+                stats.add_comment_tokens(count_tokens_bytes(line));
                 trace!("Comment No.{}", stats.comments);
             } else {
                 stats.code += 1;
+                // NEW:
+                stats.add_source_code_tokens(count_tokens_bytes(line));
                 trace!("Code No.{}", stats.code);
             }
 

@@ -20,9 +20,24 @@ use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use serde::Serialize;
 
+// NEW: tokenization support
+use tiktoken_rs::{CoreBPE, cl100k_base};
+
 use self::LanguageType::*;
 
 include!(concat!(env!("OUT_DIR"), "/language_type.rs"));
+
+// NEW: global tokenizer cache
+static TOKENIZER: Lazy<CoreBPE> =
+    Lazy::new(|| cl100k_base().expect("failed to initialize cl100k_base tokenizer"));
+
+#[inline]
+fn count_tokens_bytes(bytes: &[u8]) -> usize {
+    // We accept lossy decoding here since tokenization is approximate over text.
+    let s = String::from_utf8_lossy(bytes);
+    // Ordinary encoding (no special tokens)
+    TOKENIZER.encode_ordinary(&s).len()
+}
 
 impl Serialize for LanguageType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -100,6 +115,7 @@ impl LanguageType {
                 String::from_utf8_lossy(skippable_text)
             );
             let parse_lines = move || self.parse_lines(config, rest, CodeStats::new(), syntax);
+            // NEW: also compute token counts in the simple/parallel pass
             let simple_parse = move || {
                 LineIter::new(b'\n', skippable_text)
                     .par_bridge()
@@ -109,23 +125,35 @@ impl LanguageType {
                         // could cause a miscount.
                         let line = if is_fortran { line } else { line.trim() };
                         if line.trim().is_empty() {
-                            (1, 0, 0)
+                            (1usize, 0usize, 0usize, 0usize, 0usize) // blanks, code, comments, code_toks, comment_toks
                         } else if is_literate
                             || comments.iter().any(|c| line.starts_with(c.as_bytes()))
                         {
-                            (0, 0, 1)
+                            let toks = count_tokens_bytes(line);
+                            (0, 0, 1, 0, toks)
                         } else {
-                            (0, 1, 0)
+                            let toks = count_tokens_bytes(line);
+                            (0, 1, 0, toks, 0)
                         }
                     })
-                    .reduce(|| (0, 0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
+                    .reduce(
+                        || (0, 0, 0, 0, 0),
+                        |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3, a.4 + b.4),
+                    )
             };
 
-            let (mut stats, (blanks, code, comments)) = rayon::join(parse_lines, simple_parse);
+            let (mut stats, (blanks, code, comments, code_toks, comment_toks)) =
+                rayon::join(parse_lines, simple_parse);
 
             stats.blanks += blanks;
             stats.code += code;
             stats.comments += comments;
+
+            // NEW: accumulate tokens from the simple parse portion
+            stats.source_code_tokens += code_toks;
+            stats.comment_tokens += comment_toks;
+            stats.total_tokens = stats.source_code_tokens + stats.comment_tokens;
+
             stats
         } else {
             self.parse_lines(config, text, CodeStats::new(), syntax)
@@ -172,8 +200,9 @@ impl LanguageType {
                     }) => {
                         match language {
                             LanguageContext::Markdown { balanced, language } => {
-                                // Add the lines for the code fences.
+                                // Add the lines for the code fences (counts as comment lines).
                                 stats.comments += if balanced { 2 } else { 1 };
+                                // Note: we do NOT add tokens for fence lines.
                                 // Add the code inside the fence to the stats.
                                 *stats.blobs.entry(language).or_default() += blob;
                             }
@@ -186,8 +215,8 @@ impl LanguageType {
                                 *stats.blobs.entry(child_lang).or_default() += blob;
                             }
                             LanguageContext::Html { language } => {
+                                // Count the wrapper line as a code line but no tokens for the delimiter.
                                 stats.code += 1;
-                                // Add all the markdown blobs.
                                 *stats.blobs.entry(language).or_default() += blob;
                             }
                         }
@@ -203,10 +232,14 @@ impl LanguageType {
                 || syntax.line_is_comment(line, config, ended_with_comments, started_in_comments)
             {
                 stats.comments += 1;
+                // NEW: token count for comment line
+                stats.add_comment_tokens(count_tokens_bytes(line));
                 trace!("Comment No.{}", stats.comments);
                 trace!("Was the Comment stack empty?: {}", !started_in_comments);
             } else {
                 stats.code += 1;
+                // NEW: token count for code line
+                stats.add_source_code_tokens(count_tokens_bytes(line));
                 trace!("Code No.{}", stats.code);
             }
         }
