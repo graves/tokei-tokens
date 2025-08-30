@@ -17,7 +17,7 @@
 //! use std::fs::File;
 //! use std::io::Read;
 //!
-//! use tokei-tokens::{Config, Languages, LanguageType};
+//! use tokei_tokens::{Config, Languages, LanguageType};
 //!
 //! // The paths to search. Accepts absolute, relative, and glob paths.
 //! let paths = &["src", "tests"];

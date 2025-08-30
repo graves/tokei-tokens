@@ -2,7 +2,7 @@ use std::{process, str::FromStr};
 
 use clap::{crate_description, value_parser, Arg, ArgAction, ArgMatches};
 use colored::Colorize;
-use tokei-tokens::{Config, LanguageType, Sort};
+use tokei_tokens::{Config, LanguageType, Sort};
 
 use crate::{
     cli_utils::{crate_version, parse_or_exit, NumberFormatStyle},

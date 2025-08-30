@@ -69,7 +69,7 @@ impl Languages {
     /// or `**/*.bk`.
     ///
     /// ```no_run
-    /// use tokei-tokens::{Config, Languages};
+    /// use tokei_tokens::{Config, Languages};
     ///
     /// let mut languages = Languages::new();
     /// languages.get_statistics(&["."], &[".git", "target"], &Config::default());
@@ -90,7 +90,7 @@ impl Languages {
     /// not allocate.
     ///
     /// ```rust
-    /// # use tokei-tokens::*;
+    /// # use tokei_tokens::*;
     /// let languages = Languages::new();
     /// ```
     #[must_use]

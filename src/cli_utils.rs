@@ -12,7 +12,7 @@ use clap::crate_version;
 use num_format::ToFormattedString;
 
 use crate::input::Format;
-use tokei-tokens::{CodeStats, Language, LanguageType, Report, find_char_boundary};
+use tokei_tokens::{CodeStats, Language, LanguageType, Report, find_char_boundary};
 
 use crate::consts::{
     BLANKS_COLUMN_WIDTH, CODE_COLUMN_WIDTH, COMMENT_TOKENS_COLUMN_WIDTH, COMMENTS_COLUMN_WIDTH,

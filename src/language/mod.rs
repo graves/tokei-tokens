@@ -30,7 +30,7 @@ impl Language {
     /// Constructs a new empty Language with the comments provided.
     ///
     /// ```
-    /// # use tokei-tokens::*;
+    /// # use tokei_tokens::*;
     /// let mut rust = Language::new();
     /// ```
     #[must_use]
@@ -88,7 +88,7 @@ impl Language {
     ///
     /// ```no_run
     /// use std::{collections::BTreeMap, path::PathBuf};
-    /// use tokei-tokens::Language;
+    /// use tokei_tokens::Language;
     ///
     /// let mut language = Language::new();
     ///
@@ -120,7 +120,7 @@ impl Language {
     /// statistics.
     ///
     /// ```
-    /// # use tokei-tokens::*;
+    /// # use tokei_tokens::*;
     /// let rust = Language::new();
     ///
     /// assert!(rust.is_empty());
@@ -135,7 +135,7 @@ impl Language {
     ///
     /// ```no_run
     /// use std::{collections::BTreeMap, path::PathBuf};
-    /// use tokei-tokens::{Language, Sort};
+    /// use tokei_tokens::{Language, Sort};
     ///
     /// let mut language = Language::new();
     ///

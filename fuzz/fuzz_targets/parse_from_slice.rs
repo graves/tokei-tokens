@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use std::str;
 
-use tokei-tokens::{Config, LanguageType};
+use tokei_tokens::{Config, LanguageType};
 
 #[derive(Arbitrary, Debug)]
 pub struct FuzzInput<'a> {
