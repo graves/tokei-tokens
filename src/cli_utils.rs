@@ -675,7 +675,7 @@ impl<W: Write> Printer<W> {
         )
     }
 
-    pub fn print_total(&mut self, languages: &tokei::Languages) -> io::Result<()> {
+    pub fn print_total(&mut self, languages: &tokei_tokens::Languages) -> io::Result<()> {
         let total = languages.total();
         self.print_row()?;
         self.print_language_in_print_total(&total)?;
