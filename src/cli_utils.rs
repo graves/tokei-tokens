@@ -377,7 +377,7 @@ impl<W: Write> Printer<W> {
         let mut src_tok = 0usize;
         let mut com_tok = 0usize;
 
-        for s in stats.iter().map(tokei::CodeStats::summarise) {
+        for s in stats.iter().map(tokei_tokens::CodeStats::summarise) {
             code += s.code;
             comments += s.comments;
             blanks += s.blanks;
@@ -421,7 +421,7 @@ impl<W: Write> Printer<W> {
                     .collect::<Vec<_>>(),
             )?;
         }
-        let mut subtotal = tokei::Report::new("(Total)".into());
+        let mut subtotal = tokei_tokens::Report::new("(Total)".into());
         let summary = parent.summarise();
         subtotal.stats.code += summary.code;
         subtotal.stats.comments += summary.comments;
@@ -610,7 +610,7 @@ impl<W: Write> Printer<W> {
             return Ok(());
         }
 
-        let mut subtotal = tokei::Report::new("|- (Total)".into());
+        let mut subtotal = tokei_tokens::Report::new("|- (Total)".into());
         subtotal.stats.code += report.stats.code;
         subtotal.stats.comments += report.stats.comments;
         subtotal.stats.blanks += report.stats.blanks;

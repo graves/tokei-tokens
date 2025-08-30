@@ -398,7 +398,7 @@ impl Cli {
         Ok(())
     }
 
-    /// Overrides the shared options (See `tokei::Config` for option
+    /// Overrides the shared options (See `tokei_tokens::Config` for option
     /// descriptions) between the CLI and the config files. CLI flags have
     /// higher precedence than options present in config files.
     ///
